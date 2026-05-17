@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local configuration
+.env
+.env.*
+*.local
+
+# Model and cache directories
+models/
+hf_cache/
+.cache/
+cache/
+
+# Generated TTS/alignment outputs
+audio_blocks/
+subtitle_blocks/
+tmp/
+temp/
+outputs/
+output/
+*.alignment.json
+*.alignment.raw.json
+*.aligned.srt
+*.fake.srt
+SRT_FULL.srt
+audio_full.wav
+blocks.json
+
+# Media artifacts and personal voice samples
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+*.mp4
+*.mkv
+*.mov
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
