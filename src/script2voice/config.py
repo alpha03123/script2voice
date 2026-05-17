@@ -85,6 +85,9 @@ def apply_config(args, settings: dict, preset: dict) -> None:
     args.greedy = get_nested(preset, ("style", "greedy"), False)
     args.xvec_only = get_nested(preset, ("style", "xvec_only"), True)
     args.non_streaming_mode = get_nested(preset, ("style", "non_streaming_mode"), False)
+    args.continuity_enabled = get_nested(preset, ("continuity", "enabled"), False)
+    args.continuity_ref_tail_seconds = get_nested(preset, ("continuity", "ref_tail_seconds"), 30.0)
+    args.continuity_min_ref_seconds = get_nested(preset, ("continuity", "min_ref_seconds"), 8.0)
 
     if args.model is None:
         raise ValueError("settings.toml is missing tts.model")

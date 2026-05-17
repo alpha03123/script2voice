@@ -111,6 +111,11 @@ class TaggedScriptTests(unittest.TestCase):
                     "xvec_only": True,
                     "non_streaming_mode": False,
                 },
+                "continuity": {
+                    "enabled": True,
+                    "ref_tail_seconds": 30.0,
+                    "min_ref_seconds": 8.0,
+                },
             }
             args = type("Args", (), {"preset": "tutorial"})()
 
@@ -126,6 +131,9 @@ class TaggedScriptTests(unittest.TestCase):
             self.assertEqual(args.ref_text, "reference transcript")
             self.assertEqual(args.temperature, 0.6)
             self.assertEqual(args.repetition_penalty, 1.1)
+            self.assertTrue(args.continuity_enabled)
+            self.assertEqual(args.continuity_ref_tail_seconds, 30.0)
+            self.assertEqual(args.continuity_min_ref_seconds, 8.0)
 
     def test_load_preset_reads_toml_by_name(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -196,6 +204,39 @@ class TaggedScriptTests(unittest.TestCase):
         self.assertEqual(cues[1].start, 1.0)
         self.assertEqual(cues[1].end, 1.2)
 
+    def test_select_tail_sentences_uses_last_window(self):
+        sentences = [
+            SentenceAudio(text="第一句", duration=4.0, start=0.0, end=4.0),
+            SentenceAudio(text="第二句", duration=6.0, start=4.0, end=10.0),
+            SentenceAudio(text="第三句", duration=5.0, start=10.0, end=15.0),
+        ]
+
+        selected = output.select_tail_sentences(sentences, tail_seconds=8.0)
+
+        self.assertEqual([sentence.text for sentence in selected], ["第二句", "第三句"])
+
+    def test_write_rolling_reference_respects_min_duration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            wav_path = tmp_path / "source.wav"
+            out_path = tmp_path / "ref.wav"
+            audio = np.zeros(24000 * 5, dtype=np.float32)
+            import soundfile as sf
+
+            sf.write(wav_path, audio, 24000)
+            sentences = [SentenceAudio(text="太短", duration=5.0, start=0.0, end=5.0)]
+
+            result = output.write_rolling_reference(
+                wav_path,
+                sentences,
+                out_path,
+                tail_seconds=30.0,
+                min_seconds=8.0,
+            )
+
+            self.assertIsNone(result)
+            self.assertFalse(out_path.exists())
+
     def test_build_parser_has_only_qwen3_aligner_options(self):
         args = cli.build_parser().parse_args(["--script", "script.txt", "--output-dir", "out"])
 
@@ -223,6 +264,9 @@ class TaggedScriptTests(unittest.TestCase):
             args.ref_text = "reference transcript"
             args.block_gap_seconds = 0.4
             args.dry_run_chars_per_second = 6.0
+            args.continuity_enabled = True
+            args.continuity_ref_tail_seconds = 30.0
+            args.continuity_min_ref_seconds = 8.0
 
             blocks = script_parser.parse_tagged_script(script.read_text(encoding="utf-8"))
             output.write_outputs(blocks, args)

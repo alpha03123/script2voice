@@ -33,6 +33,44 @@ def fake_sentence_infos(text: str, chars_per_second: float) -> list[SentenceAudi
     return sentences
 
 
+def select_tail_sentences(sentences: list[SentenceAudio], tail_seconds: float) -> list[SentenceAudio]:
+    if not sentences:
+        return []
+    end_time = sentences[-1].end
+    cutoff = max(0.0, end_time - tail_seconds)
+    selected = [sentence for sentence in sentences if sentence.end > cutoff]
+    return selected or [sentences[-1]]
+
+
+def write_rolling_reference(
+    source_wav: Path,
+    sentences: list[SentenceAudio],
+    output_path: Path,
+    tail_seconds: float,
+    min_seconds: float,
+) -> tuple[str, str] | None:
+    selected = select_tail_sentences(sentences, tail_seconds)
+    if not selected:
+        return None
+
+    start = selected[0].start
+    end = selected[-1].end
+    if end - start < min_seconds:
+        return None
+
+    audio, sample_rate = sf.read(source_wav, dtype="float32")
+    audio = np.asarray(audio, dtype=np.float32).reshape(-1)
+    start_frame = max(0, round(start * sample_rate))
+    end_frame = min(len(audio), round(end * sample_rate))
+    if end_frame <= start_frame:
+        return None
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(output_path, audio[start_frame:end_frame], sample_rate)
+    ref_text = " ".join(sentence.text for sentence in selected)
+    return str(output_path), ref_text
+
+
 def write_outputs(blocks: list[ScriptBlock], args) -> list[OutputBlock]:
     output_dir = Path(args.output_dir).resolve()
     audio_dir = output_dir / "audio_blocks"
@@ -43,6 +81,10 @@ def write_outputs(blocks: list[ScriptBlock], args) -> list[OutputBlock]:
     tts_model = None if args.dry_run else load_qwen3_model(args)
     aligner = None if args.dry_run else load_aligner(args)
     output_blocks: list[OutputBlock] = []
+    base_ref_audio = args.ref_audio
+    base_ref_text = args.ref_text
+    rolling_ref: tuple[str, str] | None = None
+    rolling_ref_dir = output_dir / "temp" / "rolling_refs"
 
     for block in blocks:
         stem = f"{block.index:03d}_{safe_stem(block.tag)}"
@@ -57,6 +99,7 @@ def write_outputs(blocks: list[ScriptBlock], args) -> list[OutputBlock]:
         else:
             assert tts_model is not None
             assert aligner is not None
+            args.ref_audio, args.ref_text = rolling_ref or (base_ref_audio, base_ref_text)
             print(f"[{block.index}/{len(blocks)}] TTS [{block.tag}]", flush=True)
             audio, sample_rate = synthesize_text(tts_model, block.text, args)
             duration = len(audio) / sample_rate
@@ -64,6 +107,14 @@ def write_outputs(blocks: list[ScriptBlock], args) -> list[OutputBlock]:
 
             print(f"[{block.index}/{len(blocks)}] Align [{block.tag}]", flush=True)
             sentence_infos = align_wav(aligner, wav_path, block.text, args)
+            if args.continuity_enabled:
+                rolling_ref = write_rolling_reference(
+                    wav_path,
+                    sentence_infos,
+                    rolling_ref_dir / f"{stem}.wav",
+                    args.continuity_ref_tail_seconds,
+                    args.continuity_min_ref_seconds,
+                )
 
         if args.dry_run:
             sf.write(wav_path, audio, sample_rate)

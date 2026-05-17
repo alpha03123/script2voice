@@ -97,6 +97,11 @@ repetition_penalty = 1.1
 greedy = false
 xvec_only = true
 non_streaming_mode = false
+
+[continuity]
+enabled = true
+ref_tail_seconds = 30.0
+min_ref_seconds = 8.0
 ```
 
 Create more presets when you want different voices or delivery styles:
@@ -107,6 +112,8 @@ presets/
   product_intro.toml
   calm_narration.toml
 ```
+
+When continuity is enabled, the first tag uses the preset reference voice. Later tags use the previous generated block's tail as a temporary reference, which can improve cross-block voice and mood consistency. `ref_tail_seconds` caps the reference length, and `min_ref_seconds` avoids using references that are too short.
 
 4. Write a tagged script.
 
