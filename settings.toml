@@ -9,6 +9,7 @@ max_new_tokens = 4096
 model = "Qwen/Qwen3-ForcedAligner-0.6B"
 device_map = "cuda:0"
 dtype = "bf16"
+max_chunk_seconds = 180.0
 
 [paths]
 hf_hub_cache = "cache/hf"

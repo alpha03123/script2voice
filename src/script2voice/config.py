@@ -69,6 +69,7 @@ def apply_config(args, settings: dict, preset: dict) -> None:
     args.aligner_model = get_nested(settings, ("aligner", "model"), "Qwen/Qwen3-ForcedAligner-0.6B")
     args.aligner_device_map = get_nested(settings, ("aligner", "device_map"), "cuda:0")
     args.aligner_dtype = get_nested(settings, ("aligner", "dtype"), "bf16")
+    args.aligner_max_chunk_seconds = get_nested(settings, ("aligner", "max_chunk_seconds"), 180.0)
 
     args.ref_audio = resolve_project_path(get_nested(preset, ("voice", "ref_audio")))
     ref_text_file = resolve_project_path(get_nested(preset, ("voice", "ref_text_file")))

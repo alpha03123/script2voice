@@ -39,12 +39,14 @@ max_new_tokens = 4096
 model = "Qwen/Qwen3-ForcedAligner-0.6B"
 device_map = "cuda:0"
 dtype = "bf16"
+max_chunk_seconds = 180.0
 
 [paths]
 hf_hub_cache = "cache/hf"
 ```
 
 Use `models/` for models you manage manually, such as a local Qwen3-TTS folder. Use `cache/` for files downloaded automatically by HuggingFace or model libraries.
+`max_chunk_seconds` limits each forced-alignment pass so long narration audio does not overflow GPU memory.
 
 Voice and style presets live in `presets/`. A preset is what you choose per video style:
 

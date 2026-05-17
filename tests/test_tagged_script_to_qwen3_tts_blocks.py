@@ -93,6 +93,7 @@ class TaggedScriptTests(unittest.TestCase):
                     "model": "Qwen/Qwen3-ForcedAligner-0.6B",
                     "device_map": "cuda:0",
                     "dtype": "bf16",
+                    "max_chunk_seconds": 180.0,
                 },
                 "paths": {"hf_hub_cache": "cache/hf"},
                 "output": {"block_gap_seconds": 0.4, "dry_run_chars_per_second": 6.0},
@@ -134,6 +135,7 @@ class TaggedScriptTests(unittest.TestCase):
             self.assertTrue(args.continuity_enabled)
             self.assertEqual(args.continuity_ref_tail_seconds, 30.0)
             self.assertEqual(args.continuity_min_ref_seconds, 8.0)
+            self.assertEqual(args.aligner_max_chunk_seconds, 180.0)
 
     def test_load_preset_reads_toml_by_name(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -203,6 +205,25 @@ class TaggedScriptTests(unittest.TestCase):
         self.assertEqual(cues[0].end, 0.4)
         self.assertEqual(cues[1].start, 1.0)
         self.assertEqual(cues[1].end, 1.2)
+
+    def test_split_text_for_alignment_keeps_complete_sentences_under_time_limit(self):
+        chunks = alignment.split_text_for_alignment(
+            "第一句。第二句。第三句。第四句。",
+            audio_duration=240.0,
+            max_chunk_seconds=120.0,
+        )
+
+        self.assertEqual([chunk[0] for chunk in chunks], ["第一句。第二句。", "第三句。第四句。"])
+        self.assertEqual(chunks[0][1], 0.0)
+        self.assertEqual(chunks[-1][2], 240.0)
+
+    def test_offset_cues_shifts_alignment_times(self):
+        cues = [SentenceAudio(text="第一句", duration=1.2, start=0.3, end=1.5)]
+
+        shifted = alignment.offset_cues(cues, 10.0)
+
+        self.assertEqual(shifted[0].start, 10.3)
+        self.assertEqual(shifted[0].end, 11.5)
 
     def test_select_tail_sentences_uses_last_window(self):
         sentences = [
