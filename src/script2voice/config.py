@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tomllib
 from pathlib import Path
 
@@ -54,12 +55,14 @@ def load_preset(name: str, presets_dir: Path = DEFAULT_PRESETS_DIR) -> dict:
 
 
 def apply_config(args, settings: dict, preset: dict) -> None:
-    args.model = resolve_project_path(get_nested(settings, ("tts", "model")))
+    args.model = os.environ.get("SCRIPT2VOICE_TTS_MODEL") or resolve_project_path(get_nested(settings, ("tts", "model")))
     args.device = get_nested(settings, ("tts", "device"), "cuda")
     args.dtype = get_nested(settings, ("tts", "dtype"), "bf16")
     args.max_seq_len = get_nested(settings, ("tts", "max_seq_len"), 8192)
     args.max_new_tokens = get_nested(settings, ("tts", "max_new_tokens"), 4096)
-    args.hf_hub_cache = resolve_project_path(get_nested(settings, ("paths", "hf_hub_cache"), "cache/hf"))
+    args.hf_hub_cache = os.environ.get("SCRIPT2VOICE_HF_HUB_CACHE") or resolve_project_path(
+        get_nested(settings, ("paths", "hf_hub_cache"), "cache/hf")
+    )
     args.block_gap_seconds = get_nested(settings, ("output", "block_gap_seconds"), 0.4)
     args.dry_run_chars_per_second = get_nested(settings, ("output", "dry_run_chars_per_second"), 6.0)
 
