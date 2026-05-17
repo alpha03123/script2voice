@@ -8,5 +8,5 @@ temperature = 0.6
 top_k = 50
 repetition_penalty = 1.1
 greedy = false
-xvec_only = true
+xvec_only = false
 non_streaming_mode = false
