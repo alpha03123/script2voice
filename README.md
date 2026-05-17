@@ -135,6 +135,18 @@ E:\gittools\self\tagged-tts-blocks\tagged-tts.cmd `
   --preset tutorial
 ```
 
+To ignore tag boundaries and generate one full-length narration block:
+
+```powershell
+E:\gittools\self\tagged-tts-blocks\tagged-tts.cmd `
+  --script "E:\video_process\videos\5月16日\vsummary_script.txt" `
+  --output-dir "E:\video_process\videos\5月16日\vsummary_full_voice" `
+  --preset tutorial `
+  --full
+```
+
+Full mode sets `max_new_tokens` to `25600` for that run and disables rolling reference continuity because there is only one generated block.
+
 ## Output
 
 Output:

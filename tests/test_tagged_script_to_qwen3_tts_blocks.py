@@ -244,6 +244,27 @@ class TaggedScriptTests(unittest.TestCase):
         self.assertFalse(hasattr(args, "index_model"))
         self.assertFalse(hasattr(args, "ref_audio"))
         self.assertEqual(args.preset, "tutorial")
+        self.assertFalse(args.full)
+
+    def test_merge_blocks_for_full_mode_combines_text_and_visual_notes(self):
+        blocks = script_parser.parse_tagged_script(
+            """
+            [a]
+            (画面 A)
+            第一段。
+
+            [b]
+            (画面 B)
+            第二段。
+            """
+        )
+
+        merged = cli.merge_blocks_for_full_mode(blocks)
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].tag, "full")
+        self.assertEqual(merged[0].text, "第一段。\n第二段。")
+        self.assertEqual(merged[0].visual_notes, ["画面 A", "画面 B"])
 
     def test_dry_run_writes_block_and_full_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
