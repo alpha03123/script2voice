@@ -1,0 +1,18 @@
+[tts]
+model = "models/Qwen3-TTS-12Hz-1.7B-Base"
+device = "cuda"
+dtype = "bf16"
+max_seq_len = 8192
+max_new_tokens = 4096
+
+[aligner]
+model = "Qwen/Qwen3-ForcedAligner-0.6B"
+device_map = "cuda:0"
+dtype = "bf16"
+
+[paths]
+hf_hub_cache = "cache/hf"
+
+[output]
+block_gap_seconds = 0.4
+dry_run_chars_per_second = 6.0

@@ -1,0 +1,12 @@
+[voice]
+ref_audio = "voices/tutorial/ref.wav"
+ref_text_file = "voices/tutorial/ref.txt"
+
+[style]
+instruct = "请用自然、清晰、稳定的中文教程讲解语气朗读。语速适中，情绪克制但有亲和力，重点术语读清楚，不要使用夸张、播音腔或过度营销的语气。"
+temperature = 0.6
+top_k = 50
+repetition_penalty = 1.1
+greedy = false
+xvec_only = true
+non_streaming_mode = false

@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -16,12 +17,10 @@ import soundfile as sf
 import torch
 
 
-DEFAULT_REF_TEXT = (
-    "I'm confused why some people have super short timelines, yet at the same time "
-    "are bullish on scaling up reinforcement learning atop LLMs. If we're actually "
-    "close to a human-like learner, then this whole approach of training on verifiable "
-    "outcomes is doomed."
-)
+PROJECT_ROOT = Path(__file__).resolve().parent
+DEFAULT_SETTINGS = PROJECT_ROOT / "settings.toml"
+DEFAULT_PRESETS_DIR = PROJECT_ROOT / "presets"
+DEFAULT_PRESET = "tutorial"
 DEFAULT_INSTRUCT = (
     "请用自然、清晰、稳定的中文教程讲解语气朗读。"
     "语速适中，情绪克制但有亲和力，重点术语读清楚，"
@@ -34,8 +33,6 @@ SENTENCE_RE = re.compile(r"([^。！？!?\n]+[。！？!?]?)")
 CAPTION_BOUNDARY_PUNCTUATION = "，,。.!！?？；;、：:“”\"'‘’「」『』《》()（）[]【】"
 CAPTION_BOUNDARY_CHARS = CAPTION_BOUNDARY_PUNCTUATION + " \t\r\n"
 SRT_TIME_RE = re.compile(r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})")
-DEFAULT_VOICE_PRESETS = Path(__file__).resolve().with_name("voice_presets.example.json")
-DEFAULT_HF_HUB_CACHE = r"E:\gittools\models\hf_cache"
 
 
 @dataclass(frozen=True)
@@ -65,6 +62,80 @@ class OutputBlock:
     duration: float
     sample_rate: int
     sentences: list[SentenceAudio]
+
+
+def read_toml(path: Path) -> dict:
+    with path.open("rb") as file:
+        return tomllib.load(file)
+
+
+def resolve_project_path(value: str | None) -> str | None:
+    if value is None:
+        return None
+    path = Path(value)
+    if path.is_absolute():
+        return str(path)
+    return str((PROJECT_ROOT / path).resolve())
+
+
+def get_nested(config: dict, keys: tuple[str, ...], default=None):
+    current = config
+    for key in keys:
+        if not isinstance(current, dict) or key not in current:
+            return default
+        current = current[key]
+    return current
+
+
+def load_settings(path: Path = DEFAULT_SETTINGS) -> dict:
+    if not path.exists():
+        raise FileNotFoundError(f"Settings file does not exist: {path}")
+    return read_toml(path)
+
+
+def load_preset(name: str, presets_dir: Path = DEFAULT_PRESETS_DIR) -> dict:
+    if not name:
+        raise ValueError("--preset is required")
+    preset_path = presets_dir / f"{name}.toml"
+    if not preset_path.exists():
+        raise FileNotFoundError(f"Preset does not exist: {preset_path}")
+    return read_toml(preset_path)
+
+
+def apply_config(args, settings: dict, preset: dict) -> None:
+    args.model = resolve_project_path(get_nested(settings, ("tts", "model")))
+    args.device = get_nested(settings, ("tts", "device"), "cuda")
+    args.dtype = get_nested(settings, ("tts", "dtype"), "bf16")
+    args.max_seq_len = get_nested(settings, ("tts", "max_seq_len"), 8192)
+    args.max_new_tokens = get_nested(settings, ("tts", "max_new_tokens"), 4096)
+    args.hf_hub_cache = resolve_project_path(get_nested(settings, ("paths", "hf_hub_cache"), "cache/hf"))
+    args.block_gap_seconds = get_nested(settings, ("output", "block_gap_seconds"), 0.4)
+    args.dry_run_chars_per_second = get_nested(settings, ("output", "dry_run_chars_per_second"), 6.0)
+
+    args.aligner_model = get_nested(settings, ("aligner", "model"), "Qwen/Qwen3-ForcedAligner-0.6B")
+    args.aligner_device_map = get_nested(settings, ("aligner", "device_map"), "cuda:0")
+    args.aligner_dtype = get_nested(settings, ("aligner", "dtype"), "bf16")
+
+    args.ref_audio = resolve_project_path(get_nested(preset, ("voice", "ref_audio")))
+    ref_text_file = resolve_project_path(get_nested(preset, ("voice", "ref_text_file")))
+    if ref_text_file is None:
+        raise ValueError(f"Preset {args.preset!r} is missing voice.ref_text_file")
+    args.ref_text = Path(ref_text_file).read_text(encoding="utf-8").strip()
+    if not args.ref_text:
+        raise ValueError(f"Preset {args.preset!r} has an empty ref_text_file: {ref_text_file}")
+
+    args.instruct = get_nested(preset, ("style", "instruct"), DEFAULT_INSTRUCT)
+    args.temperature = get_nested(preset, ("style", "temperature"), 0.8)
+    args.top_k = get_nested(preset, ("style", "top_k"), 50)
+    args.repetition_penalty = get_nested(preset, ("style", "repetition_penalty"), 1.05)
+    args.greedy = get_nested(preset, ("style", "greedy"), False)
+    args.xvec_only = get_nested(preset, ("style", "xvec_only"), True)
+    args.non_streaming_mode = get_nested(preset, ("style", "non_streaming_mode"), False)
+
+    if args.model is None:
+        raise ValueError("settings.toml is missing tts.model")
+    if args.ref_audio is None:
+        raise ValueError(f"Preset {args.preset!r} is missing voice.ref_audio")
 
 
 def normalize_text(lines: list[str]) -> str:
@@ -245,36 +316,6 @@ def load_aligner(args):
         device_map=args.aligner_device_map,
         cache_dir=args.hf_hub_cache,
     )
-
-
-def apply_voice_preset(args) -> None:
-    if args.voice_preset:
-        presets_path = Path(args.voice_presets).resolve()
-        presets = json.loads(presets_path.read_text(encoding="utf-8"))
-        if args.voice_preset not in presets:
-            available = ", ".join(sorted(presets))
-            raise ValueError(f"Voice preset {args.voice_preset!r} not found. Available presets: {available}")
-
-        preset = presets[args.voice_preset]
-        if args.ref_audio is None:
-            ref_audio = preset.get("ref_audio")
-            if not ref_audio:
-                raise ValueError(f"Voice preset {args.voice_preset!r} is missing ref_audio")
-            ref_audio_path = Path(ref_audio)
-            if not ref_audio_path.is_absolute():
-                ref_audio_path = presets_path.parent / ref_audio_path
-            args.ref_audio = str(ref_audio_path.resolve())
-
-        if args.ref_text is None:
-            ref_text = preset.get("ref_text")
-            if not ref_text:
-                raise ValueError(f"Voice preset {args.voice_preset!r} is missing ref_text")
-            args.ref_text = ref_text
-
-    if args.ref_audio is None:
-        raise ValueError("Reference audio is required. Pass --ref-audio or --voice-preset.")
-    if args.ref_text is None:
-        args.ref_text = DEFAULT_REF_TEXT
 
 
 def synthesize_text(model, text: str, args) -> tuple[np.ndarray, int]:
@@ -513,39 +554,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate WAV/SRT files from a tagged narration script.")
     parser.add_argument("--script", required=True, help="Input tagged script path")
     parser.add_argument("--output-dir", required=True, help="Output folder")
-    parser.add_argument("--repo", default="", help="Optional faster-qwen3-tts repo path")
-    parser.add_argument("--model", default=r"E:\gittools\models\Qwen3-TTS-12Hz-1.7B-Base", help="Qwen3-TTS model id or local path")
-    parser.add_argument("--device", default="cuda", help="cuda or cpu")
-    parser.add_argument("--dtype", default="bf16", choices=["bf16", "fp16", "fp32"])
-    parser.add_argument("--language", default="Chinese", help="TTS and aligner language hint")
-    parser.add_argument("--voice-presets", default=str(DEFAULT_VOICE_PRESETS), help="JSON file containing voice presets")
-    parser.add_argument("--voice-preset", default="", help="Voice preset name from --voice-presets")
-    parser.add_argument("--ref-audio", default=None, help="Manual reference audio override")
-    parser.add_argument("--ref-text", default=None, help="Manual reference transcript override")
-    parser.add_argument("--max-seq-len", type=int, default=8192)
-    parser.add_argument("--max-new-tokens", type=int, default=4096)
-    parser.add_argument("--temperature", type=float, default=0.8)
-    parser.add_argument("--top-k", type=int, default=50)
-    parser.add_argument("--repetition-penalty", type=float, default=1.05)
-    parser.add_argument("--instruct", default=DEFAULT_INSTRUCT, help="TTS style instruction; pass an empty string to disable")
-    parser.add_argument("--greedy", action="store_true")
-    parser.add_argument("--icl", dest="xvec_only", action="store_false", help="Use full ICL cloning instead of x-vector-only")
-    parser.add_argument("--non-streaming-mode", action="store_true")
-    parser.add_argument("--aligner-model", default="Qwen/Qwen3-ForcedAligner-0.6B")
-    parser.add_argument("--aligner-device-map", default="cuda:0")
-    parser.add_argument("--aligner-dtype", default="bf16", choices=["bf16", "fp16", "fp32"])
-    parser.add_argument("--hf-hub-cache", default=DEFAULT_HF_HUB_CACHE, help="Shared HuggingFace cache directory")
-    parser.add_argument("--block-gap-seconds", type=float, default=0.4, help="Silence inserted between full block WAVs")
+    parser.add_argument("--preset", default=DEFAULT_PRESET, help="Preset name from presets/<name>.toml")
     parser.add_argument("--preview-srt-only", action="store_true", help="Only write fake-timed SRT files for caption review")
     parser.add_argument("--dry-run", action="store_true", help="Validate parsing and write silent WAV/SRT placeholders")
-    parser.add_argument("--dry-run-chars-per-second", type=float, default=6.0)
-    parser.set_defaults(xvec_only=True)
+    parser.set_defaults(repo="", language="Chinese")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    apply_voice_preset(args)
+    apply_config(args, load_settings(), load_preset(args.preset))
     script_path = Path(args.script).resolve()
     blocks = parse_tagged_script(script_path.read_text(encoding="utf-8-sig"))
     if args.preview_srt_only:

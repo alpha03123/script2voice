@@ -20,10 +20,21 @@ ENV/
 *.local
 
 # Model and cache directories
-models/
+models/*
+!models/.gitkeep
 hf_cache/
 .cache/
-cache/
+cache/*
+!cache/.gitkeep
+
+# Local voice assets
+voices/**/*.wav
+voices/**/*.mp3
+voices/**/*.flac
+voices/**/*.ogg
+voices/**/*.m4a
+voices/**/*.txt
+!voices/**/*.example.txt
 
 # Generated TTS/alignment outputs
 audio_blocks/
@@ -41,7 +52,7 @@ SRT_FULL.srt
 audio_full.wav
 blocks.json
 
-# Media artifacts and personal voice samples
+# Media artifacts
 *.wav
 *.mp3
 *.flac

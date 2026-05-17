@@ -1,5 +1,4 @@
 import importlib.util
-import json
 import numpy as np
 import pathlib
 import sys
@@ -100,69 +99,78 @@ class TaggedScriptTests(unittest.TestCase):
 
         self.assertIn("00:00:02,500 --> 00:00:03,500", shifted)
 
-    def test_apply_voice_preset_sets_ref_audio_and_text(self):
+    def test_apply_config_loads_settings_and_preset(self):
         module = load_module()
 
         with tempfile.TemporaryDirectory() as tmp:
-            presets_path = pathlib.Path(tmp) / "voices.json"
-            presets_path.write_text(
-                json.dumps(
-                    {
-                        "default": {
-                            "ref_audio": "voice.wav",
-                            "ref_text": "reference transcript",
-                        }
-                    }
-                ),
-                encoding="utf-8",
-            )
-            args = type(
-                "Args",
-                (),
-                {
-                    "voice_presets": str(presets_path),
-                    "voice_preset": "default",
-                    "ref_audio": None,
-                    "ref_text": None,
+            root = pathlib.Path(tmp)
+            ref_text = root / "voices" / "tutorial" / "ref.txt"
+            ref_text.parent.mkdir(parents=True)
+            ref_text.write_text("reference transcript", encoding="utf-8")
+            settings = {
+                "tts": {
+                    "model": "models/qwen",
+                    "device": "cuda",
+                    "dtype": "bf16",
+                    "max_seq_len": 8192,
+                    "max_new_tokens": 4096,
                 },
-            )()
+                "aligner": {
+                    "model": "Qwen/Qwen3-ForcedAligner-0.6B",
+                    "device_map": "cuda:0",
+                    "dtype": "bf16",
+                },
+                "paths": {"hf_hub_cache": "cache/hf"},
+                "output": {"block_gap_seconds": 0.4, "dry_run_chars_per_second": 6.0},
+            }
+            preset = {
+                "voice": {
+                    "ref_audio": "voices/tutorial/ref.wav",
+                    "ref_text_file": str(ref_text),
+                },
+                "style": {
+                    "instruct": "tutorial style",
+                    "temperature": 0.6,
+                    "top_k": 50,
+                    "repetition_penalty": 1.1,
+                    "greedy": False,
+                    "xvec_only": True,
+                    "non_streaming_mode": False,
+                },
+            }
+            args = type("Args", (), {"preset": "tutorial"})()
 
-            module.apply_voice_preset(args)
+            original_root = module.PROJECT_ROOT
+            module.PROJECT_ROOT = root
+            try:
+                module.apply_config(args, settings, preset)
+            finally:
+                module.PROJECT_ROOT = original_root
 
-            self.assertEqual(args.ref_audio, str((presets_path.parent / "voice.wav").resolve()))
+            self.assertEqual(args.model, str((root / "models/qwen").resolve()))
+            self.assertEqual(args.ref_audio, str((root / "voices/tutorial/ref.wav").resolve()))
             self.assertEqual(args.ref_text, "reference transcript")
+            self.assertEqual(args.temperature, 0.6)
+            self.assertEqual(args.repetition_penalty, 1.1)
 
-    def test_manual_ref_audio_overrides_voice_preset_audio_only(self):
+    def test_load_preset_reads_toml_by_name(self):
         module = load_module()
 
         with tempfile.TemporaryDirectory() as tmp:
-            presets_path = pathlib.Path(tmp) / "voices.json"
-            presets_path.write_text(
-                json.dumps(
-                    {
-                        "default": {
-                            "ref_audio": "voice.wav",
-                            "ref_text": "reference transcript",
-                        }
-                    }
-                ),
+            presets_dir = pathlib.Path(tmp) / "presets"
+            presets_dir.mkdir()
+            (presets_dir / "tutorial.toml").write_text(
+                """
+                [voice]
+                ref_audio = "voices/tutorial/ref.wav"
+                ref_text_file = "voices/tutorial/ref.txt"
+                """,
                 encoding="utf-8",
             )
-            args = type(
-                "Args",
-                (),
-                {
-                    "voice_presets": str(presets_path),
-                    "voice_preset": "default",
-                    "ref_audio": "manual.wav",
-                    "ref_text": None,
-                },
-            )()
 
-            module.apply_voice_preset(args)
+            preset = module.load_preset("tutorial", presets_dir)
 
-            self.assertEqual(args.ref_audio, "manual.wav")
-            self.assertEqual(args.ref_text, "reference transcript")
+            self.assertEqual(preset["voice"]["ref_audio"], "voices/tutorial/ref.wav")
 
     def test_synthesize_text_passes_instruct_to_qwen3(self):
         module = load_module()
@@ -227,9 +235,8 @@ class TaggedScriptTests(unittest.TestCase):
 
         self.assertFalse(hasattr(args, "backend"))
         self.assertFalse(hasattr(args, "index_model"))
-        self.assertEqual(args.max_seq_len, 8192)
-        self.assertEqual(args.max_new_tokens, 4096)
-        self.assertEqual(args.aligner_model, "Qwen/Qwen3-ForcedAligner-0.6B")
+        self.assertFalse(hasattr(args, "ref_audio"))
+        self.assertEqual(args.preset, "tutorial")
 
     def test_dry_run_writes_block_and_full_outputs(self):
         module = load_module()
@@ -245,12 +252,13 @@ class TaggedScriptTests(unittest.TestCase):
                     "--output-dir",
                     str(output_dir),
                     "--dry-run",
-                    "--ref-audio",
-                    "voice.wav",
-                    "--ref-text",
-                    "reference transcript",
                 ]
             )
+            args.model = "unused"
+            args.ref_audio = "voice.wav"
+            args.ref_text = "reference transcript"
+            args.block_gap_seconds = 0.4
+            args.dry_run_chars_per_second = 6.0
 
             blocks = module.parse_tagged_script(script.read_text(encoding="utf-8"))
             module.write_outputs(blocks, args)
