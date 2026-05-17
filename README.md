@@ -25,7 +25,7 @@ Tags and visual notes must be on their own lines:
 
 ## Configuration
 
-Machine-level settings live in `settings.toml`:
+Machine-level settings live in `settings.toml`. These settings usually stay the same across projects:
 
 ```toml
 [tts]
@@ -39,9 +39,14 @@ max_new_tokens = 4096
 model = "Qwen/Qwen3-ForcedAligner-0.6B"
 device_map = "cuda:0"
 dtype = "bf16"
+
+[paths]
+hf_hub_cache = "cache/hf"
 ```
 
-Voice and style presets live in `presets/`:
+Use `models/` for models you manage manually, such as a local Qwen3-TTS folder. Use `cache/` for files downloaded automatically by HuggingFace or model libraries.
+
+Voice and style presets live in `presets/`. A preset is what you choose per video style:
 
 ```toml
 [voice]
@@ -57,7 +62,64 @@ repetition_penalty = 1.1
 
 Put the reference WAV and its exact transcript in the matching `voices/<name>/` folder. Real voice files and transcripts are ignored by git.
 
-## Usage
+## Quick Start
+
+1. Put the TTS model under `models/`, or edit `settings.toml` to point to your existing model path.
+
+```text
+models/
+  Qwen3-TTS-12Hz-1.7B-Base/
+```
+
+2. Put your voice reference audio and transcript under `voices/`.
+
+```text
+voices/
+  tutorial/
+    ref.wav
+    ref.txt
+```
+
+`ref.txt` must contain the exact words spoken in `ref.wav`.
+
+3. Configure a preset in `presets/tutorial.toml`.
+
+```toml
+[voice]
+ref_audio = "voices/tutorial/ref.wav"
+ref_text_file = "voices/tutorial/ref.txt"
+
+[style]
+instruct = "请用自然、清晰、稳定的中文教程讲解语气朗读。"
+temperature = 0.6
+top_k = 50
+repetition_penalty = 1.1
+greedy = false
+xvec_only = true
+non_streaming_mode = false
+```
+
+Create more presets when you want different voices or delivery styles:
+
+```text
+presets/
+  tutorial.toml
+  product_intro.toml
+  calm_narration.toml
+```
+
+4. Write a tagged script.
+
+```text
+[summary]
+(Show project homepage)
+大家好，今天介绍一个本地 AI 视频知识管理工具。
+
+[settings]
+第一次使用时，进入左侧的控制中心进行配置。
+```
+
+5. Generate WAV and SRT.
 
 ```powershell
 E:\gittools\self\tagged-tts-blocks\tagged-tts.cmd `
@@ -65,6 +127,8 @@ E:\gittools\self\tagged-tts-blocks\tagged-tts.cmd `
   --output-dir "E:\video_process\videos\5月16日\vsummary_voice" `
   --preset tutorial
 ```
+
+## Output
 
 Output:
 
