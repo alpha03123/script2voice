@@ -63,105 +63,33 @@ class TaggedScriptTests(unittest.TestCase):
 
         self.assertEqual(module.safe_stem("设置/配置:API"), "设置_配置_API")
 
-    def test_srt_for_block_uses_local_zero_based_timeline(self):
-        module = load_module()
-
-        sentences = [
-            module.SentenceAudio(text="第一句。", duration=1.5),
-            module.SentenceAudio(text="第二句。", duration=2.5),
-        ]
-        srt = module.make_local_srt(sentences, gap_seconds=0.0)
-
-        self.assertIn("00:00:00,000 -->", srt)
-        self.assertIn("--> 00:00:04,000", srt)
-        self.assertIn("第一句", srt)
-        self.assertIn("第二句", srt)
-
-    def test_srt_captions_do_not_end_with_punctuation(self):
-        module = load_module()
-
-        sentences = [
-            module.SentenceAudio(text="这是字幕，但是后面还有内容。", duration=4.0),
-        ]
-        srt = module.make_local_srt(sentences, gap_seconds=0.0)
-        caption_lines = [
-            line
-            for line in srt.splitlines()
-            if line and not line.isdigit() and "-->" not in line
-        ]
-
-        self.assertTrue(caption_lines)
-        self.assertTrue(all(not line.endswith(("，", ",", "。", "；", ";", "、")) for line in caption_lines))
-
-    def test_srt_captions_do_not_emit_tiny_or_punctuation_only_lines(self):
-        module = load_module()
-
-        text = "需要说明的是，如果你使用外部大语言模型供应商，AI 总结和问答时会把必要的文本内容发送给你配置的模型接口。"
-        sentences = [
-            module.SentenceAudio(text=text, duration=8.0),
-        ]
-        srt = module.make_local_srt(sentences, gap_seconds=0.0)
-        caption_lines = [
-            line
-            for line in srt.splitlines()
-            if line and not line.isdigit() and "-->" not in line
-        ]
-
-        self.assertNotIn("AI", caption_lines)
-        self.assertNotIn("，", caption_lines)
-        self.assertNotIn(",", caption_lines)
-        self.assertTrue(all(len(line) >= 4 for line in caption_lines[:-1]))
-
-    def test_srt_keeps_long_sentence_complete(self):
-        module = load_module()
-
-        text = "你是不是也经常这样：网盘里存了几个 T 的硬核教程视频，什么 UE5 全套教程、Python 精讲、AI 绘画课、剪辑课、编程课，收藏夹越来越满"
-        sentences = [
-            module.SentenceAudio(text=text, duration=10.0),
-        ]
-
-        srt = module.make_local_srt(sentences, gap_seconds=0.0, max_caption_chars=24)
-        caption_lines = [
-            line
-            for line in srt.splitlines()
-            if line and not line.isdigit() and "-->" not in line
-        ]
-
-        self.assertEqual(caption_lines, [text])
-        self.assertIn("--> 00:00:10,000", srt)
-
-    def test_srt_keeps_colon_sentence_complete(self):
-        module = load_module()
-
-        text = "这就是它最核心的能力：把视频变成可以对话的知识资产。"
-        sentences = [
-            module.SentenceAudio(text=text, duration=5.0),
-        ]
-
-        srt = module.make_local_srt(sentences, gap_seconds=0.0, max_caption_chars=24)
-        caption_lines = [
-            line
-            for line in srt.splitlines()
-            if line and not line.isdigit() and "-->" not in line
-        ]
-
-        self.assertEqual(caption_lines, ["这就是它最核心的能力：把视频变成可以对话的知识资产"])
-
-    def test_split_sentences_does_not_split_by_caption_length(self):
-        module = load_module()
-
-        text = "语音转写部分使用的是 faster-whisper，推荐选择 large-v3-turbo，兼顾速度和识别质量。"
-
-        sentences = module.split_sentences(text, max_chars=24)
-
-        self.assertEqual(sentences, ["语音转写部分使用的是 faster-whisper，推荐选择 large-v3-turbo，兼顾速度和识别质量"])
-
-    def test_clean_caption_removes_leading_punctuation(self):
+    def test_clean_caption_removes_boundary_punctuation(self):
         module = load_module()
 
         self.assertEqual(module.clean_caption("，就可以进入单视频对话"), "就可以进入单视频对话")
-        self.assertEqual(module.clean_caption("”、“哪里讲到了通道处理"), "哪里讲到了通道处理")
-        self.assertEqual(module.clean_caption("”、“帮我总结一下材质系统的学习路线"), "帮我总结一下材质系统的学习路线")
+        self.assertEqual(module.clean_caption("”、“哪里讲到了通道处理？"), "哪里讲到了通道处理")
+        self.assertEqual(module.clean_caption("、“老师提到的材质命名规范有哪些？"), "老师提到的材质命名规范有哪些")
+
+    def test_split_sentences_keeps_complete_sentences(self):
+        module = load_module()
+
+        text = "大家好，欢迎来到我的频道。今天介绍 vsummary。"
+
+        self.assertEqual(module.split_sentences(text), ["大家好，欢迎来到我的频道", "今天介绍vsummary"])
+
+    def test_make_local_srt_uses_aligned_times(self):
+        module = load_module()
+
+        sentences = [
+            module.SentenceAudio(text="第一句。", duration=1.5, start=0.4, end=1.9),
+            module.SentenceAudio(text="第二句。", duration=2.5, start=2.2, end=4.7),
+        ]
+        srt = module.make_local_srt(sentences)
+
+        self.assertIn("00:00:00,400 --> 00:00:01,900", srt)
+        self.assertIn("00:00:02,200 --> 00:00:04,700", srt)
+        self.assertIn("第一句", srt)
+        self.assertIn("第二句", srt)
 
     def test_offset_srt_times(self):
         module = load_module()
@@ -236,7 +164,7 @@ class TaggedScriptTests(unittest.TestCase):
             self.assertEqual(args.ref_audio, "manual.wav")
             self.assertEqual(args.ref_text, "reference transcript")
 
-    def test_synthesize_text_passes_instruct_to_tts(self):
+    def test_synthesize_text_passes_instruct_to_qwen3(self):
         module = load_module()
 
         class FakeModel:
@@ -266,64 +194,72 @@ class TaggedScriptTests(unittest.TestCase):
         )()
         model = FakeModel()
 
-        module.synthesize_text(model, "测试文本", args)
-
-        self.assertEqual(model.kwargs["instruct"], "用自然、清晰的教程讲解语气朗读。")
-
-    def test_synthesize_text_supports_indextts2_backend(self):
-        module = load_module()
-
-        class FakeModel:
-            def __init__(self):
-                self.kwargs = None
-
-            def infer(self, **kwargs):
-                self.kwargs = kwargs
-                return (22050, np.zeros((10, 1), dtype=np.int16))
-
-        args = type(
-            "Args",
-            (),
-            {
-                "backend": "indextts2",
-                "ref_audio": "voice.wav",
-                "hf_hub_cache": r"E:\gittools\models\hf_cache",
-                "index_emo_vector": "0,0,0,0,0,0,0,0",
-                "index_emo_alpha": 1.0,
-                "index_use_random": False,
-                "index_diffusion_steps": 25,
-                "index_cfg_rate": 0.7,
-            },
-        )()
-        model = FakeModel()
-
         audio, sample_rate = module.synthesize_text(model, "测试文本", args)
 
-        self.assertEqual(sample_rate, 22050)
+        self.assertEqual(sample_rate, 24000)
         self.assertEqual(audio.dtype, np.float32)
-        self.assertEqual(model.kwargs["spk_audio_prompt"], "voice.wav")
-        self.assertEqual(model.kwargs["diffusion_steps"], 25)
-        self.assertEqual(model.kwargs["inference_cfg_rate"], 0.7)
+        self.assertEqual(model.kwargs["text"], "测试文本")
+        self.assertEqual(model.kwargs["instruct"], "用自然、清晰的教程讲解语气朗读。")
 
-    def test_build_parser_exposes_indextts2_backend(self):
+    def test_build_sentence_cues_groups_aligned_tokens_by_original_sentences(self):
         module = load_module()
 
-        args = module.build_parser().parse_args(
-            [
-                "--script",
-                "script.txt",
-                "--output-dir",
-                "out",
-                "--backend",
-                "indextts2",
-            ]
-        )
+        items = [
+            {"text": "大", "start_time": 0.1, "end_time": 0.2},
+            {"text": "家", "start_time": 0.2, "end_time": 0.3},
+            {"text": "好", "start_time": 0.3, "end_time": 0.4},
+            {"text": "今", "start_time": 1.0, "end_time": 1.1},
+            {"text": "天", "start_time": 1.1, "end_time": 1.2},
+        ]
 
-        self.assertEqual(args.backend, "indextts2")
-        self.assertTrue(args.index_fp16)
-        self.assertEqual(args.hf_hub_cache, r"E:\gittools\models\hf_cache")
-        self.assertEqual(args.index_diffusion_steps, 25)
-        self.assertEqual(args.index_cfg_rate, 0.7)
+        cues = module.build_sentence_cues(items, "大家好。今天？")
+
+        self.assertEqual([cue.text for cue in cues], ["大家好", "今天"])
+        self.assertEqual(cues[0].start, 0.1)
+        self.assertEqual(cues[0].end, 0.4)
+        self.assertEqual(cues[1].start, 1.0)
+        self.assertEqual(cues[1].end, 1.2)
+
+    def test_build_parser_has_only_qwen3_aligner_options(self):
+        module = load_module()
+
+        args = module.build_parser().parse_args(["--script", "script.txt", "--output-dir", "out"])
+
+        self.assertFalse(hasattr(args, "backend"))
+        self.assertFalse(hasattr(args, "index_model"))
+        self.assertEqual(args.max_seq_len, 8192)
+        self.assertEqual(args.max_new_tokens, 4096)
+        self.assertEqual(args.aligner_model, "Qwen/Qwen3-ForcedAligner-0.6B")
+
+    def test_dry_run_writes_block_and_full_outputs(self):
+        module = load_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            script = pathlib.Path(tmp) / "script.txt"
+            output_dir = pathlib.Path(tmp) / "out"
+            script.write_text("[summary]\n大家好。今天介绍 vsummary。\n", encoding="utf-8")
+            args = module.build_parser().parse_args(
+                [
+                    "--script",
+                    str(script),
+                    "--output-dir",
+                    str(output_dir),
+                    "--dry-run",
+                    "--ref-audio",
+                    "voice.wav",
+                    "--ref-text",
+                    "reference transcript",
+                ]
+            )
+
+            blocks = module.parse_tagged_script(script.read_text(encoding="utf-8"))
+            module.write_outputs(blocks, args)
+
+            self.assertTrue((output_dir / "audio_blocks" / "001_summary.wav").exists())
+            self.assertTrue((output_dir / "subtitle_blocks" / "001_summary.srt").exists())
+            self.assertTrue((output_dir / "audio_full.wav").exists())
+            self.assertTrue((output_dir / "SRT_FULL.srt").exists())
+            self.assertTrue((output_dir / "blocks.json").exists())
 
 
 if __name__ == "__main__":
