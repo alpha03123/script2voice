@@ -2,17 +2,15 @@
 
 Generate narration WAV files and matching SRT subtitles from a tagged script.
 
-The main workflow is:
-
 ```text
 tagged script -> Qwen3-TTS longform WAV -> Qwen3 ForcedAligner -> SRT
 ```
 
-Each `[tag]` block is treated as one narration module. Script2Voice generates one WAV and one SRT per block, then also exports a stitched `audio_full.wav` and `SRT_FULL.srt`.
+Each `[tag]` block becomes one narration module. Script2Voice exports one WAV/SRT pair per module and also writes a stitched `audio_full.wav` with `SRT_FULL.srt`.
 
 ## Input
 
-Tags must be on their own line:
+Tags and visual notes must be on their own lines:
 
 ```text
 [summary]
@@ -23,9 +21,52 @@ Tags must be on their own line:
 第一次使用时，进入左侧的控制中心进行配置。
 ```
 
-Lines like `(Show project homepage)` are visual notes. They are saved to `blocks.json`, but they are not sent to TTS and do not appear in subtitles.
+`[summary]` starts a module. `(Show project homepage)` is saved as a visual note in `blocks.json`, but it is not sent to TTS and does not appear in subtitles.
 
-## Output
+## Configuration
+
+Machine-level settings live in `settings.toml`:
+
+```toml
+[tts]
+model = "models/Qwen3-TTS-12Hz-1.7B-Base"
+device = "cuda"
+dtype = "bf16"
+max_seq_len = 8192
+max_new_tokens = 4096
+
+[aligner]
+model = "Qwen/Qwen3-ForcedAligner-0.6B"
+device_map = "cuda:0"
+dtype = "bf16"
+```
+
+Voice and style presets live in `presets/`:
+
+```toml
+[voice]
+ref_audio = "voices/tutorial/ref.wav"
+ref_text_file = "voices/tutorial/ref.txt"
+
+[style]
+instruct = "请用自然、清晰、稳定的中文教程讲解语气朗读。"
+temperature = 0.6
+top_k = 50
+repetition_penalty = 1.1
+```
+
+Put the reference WAV and its exact transcript in the matching `voices/<name>/` folder. Real voice files and transcripts are ignored by git.
+
+## Usage
+
+```powershell
+E:\gittools\self\tagged-tts-blocks\tagged-tts.cmd `
+  --script "E:\video_process\videos\5月16日\vsummary_script.txt" `
+  --output-dir "E:\video_process\videos\5月16日\vsummary_voice" `
+  --preset tutorial
+```
+
+Output:
 
 ```text
 output/
@@ -42,46 +83,6 @@ output/
 
 Per-block SRT files start at `00:00:00,000`. `SRT_FULL.srt` is offset to match `audio_full.wav`.
 
-## Usage
-
-Preview subtitle sentence splitting without loading models:
-
-```powershell
-E:\gittools\self\tagged-tts-blocks\tagged-tts.cmd `
-  --script "E:\video_process\videos\5月16日\vsummary_script.txt" `
-  --output-dir "E:\video_process\videos\5月16日\vsummary_preview" `
-  --preview-srt-only `
-  --ref-audio "E:\voices\ref_audio.wav"
-```
-
-Generate WAV and SRT:
-
-```powershell
-E:\gittools\self\tagged-tts-blocks\tagged-tts.cmd `
-  --script "E:\video_process\videos\5月16日\vsummary_script.txt" `
-  --output-dir "E:\video_process\videos\5月16日\vsummary_voice" `
-  --ref-audio "E:\voices\ref_audio.wav" `
-  --ref-text "The exact transcript spoken in the reference audio." `
-  --temperature 0.6 `
-  --repetition-penalty 1.1
-```
-
-Use a voice preset:
-
-```powershell
-E:\gittools\self\tagged-tts-blocks\tagged-tts.cmd `
-  --script "script.txt" `
-  --output-dir "out" `
-  --voice-presets "E:\voices\voice_presets.json" `
-  --voice-preset default
-```
-
-See available options:
-
-```powershell
-E:\gittools\self\tagged-tts-blocks\tagged-tts.cmd --help
-```
-
 ## Dependencies
 
 The wrapper uses:
@@ -96,13 +97,8 @@ Required Python packages in that environment:
 python -m pip install qwen-tts qwen-asr soundfile numpy
 ```
 
-Models are not stored in this repository. Recommended locations:
-
-```text
-E:\gittools\models\Qwen3-TTS-12Hz-1.7B-Base
-E:\gittools\models\hf_cache
-```
+Models are not stored in this repository. By default, place them under `models/` or edit `settings.toml`.
 
 ## Notes
 
-Script2Voice no longer generates TTS sentence by sentence. That old path caused unstable emotion and inconsistent delivery. The current path generates each tag as longform audio first, then uses forced alignment to derive sentence-level subtitle timing.
+Script2Voice does not generate TTS sentence by sentence. It generates each tag as longform audio first, then uses forced alignment to derive sentence-level subtitle timing.
