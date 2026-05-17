@@ -41,7 +41,6 @@ audio_blocks/
 subtitle_blocks/
 tmp/
 temp/
-tmp_*/
 outputs/
 output/
 *.alignment.json
