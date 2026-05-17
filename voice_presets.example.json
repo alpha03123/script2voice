@@ -1,0 +1,6 @@
+{
+  "default": {
+    "ref_audio": "E:/path/to/ref_audio.wav",
+    "ref_text": "The exact transcript spoken in the reference audio."
+  }
+}

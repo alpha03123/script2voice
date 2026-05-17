@@ -34,7 +34,7 @@ SENTENCE_RE = re.compile(r"([^。！？!?\n]+[。！？!?]?)")
 CAPTION_BOUNDARY_PUNCTUATION = "，,。.!！?？；;、：:“”\"'‘’「」『』《》()（）[]【】"
 CAPTION_BOUNDARY_CHARS = CAPTION_BOUNDARY_PUNCTUATION + " \t\r\n"
 SRT_TIME_RE = re.compile(r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})")
-DEFAULT_VOICE_PRESETS = Path(__file__).resolve().with_name("voice_presets.json")
+DEFAULT_VOICE_PRESETS = Path(__file__).resolve().with_name("voice_presets.example.json")
 DEFAULT_HF_HUB_CACHE = r"E:\gittools\models\hf_cache"
 
 
@@ -248,27 +248,33 @@ def load_aligner(args):
 
 
 def apply_voice_preset(args) -> None:
-    presets_path = Path(args.voice_presets).resolve()
-    presets = json.loads(presets_path.read_text(encoding="utf-8"))
-    if args.voice_preset not in presets:
-        available = ", ".join(sorted(presets))
-        raise ValueError(f"Voice preset {args.voice_preset!r} not found. Available presets: {available}")
+    if args.voice_preset:
+        presets_path = Path(args.voice_presets).resolve()
+        presets = json.loads(presets_path.read_text(encoding="utf-8"))
+        if args.voice_preset not in presets:
+            available = ", ".join(sorted(presets))
+            raise ValueError(f"Voice preset {args.voice_preset!r} not found. Available presets: {available}")
 
-    preset = presets[args.voice_preset]
+        preset = presets[args.voice_preset]
+        if args.ref_audio is None:
+            ref_audio = preset.get("ref_audio")
+            if not ref_audio:
+                raise ValueError(f"Voice preset {args.voice_preset!r} is missing ref_audio")
+            ref_audio_path = Path(ref_audio)
+            if not ref_audio_path.is_absolute():
+                ref_audio_path = presets_path.parent / ref_audio_path
+            args.ref_audio = str(ref_audio_path.resolve())
+
+        if args.ref_text is None:
+            ref_text = preset.get("ref_text")
+            if not ref_text:
+                raise ValueError(f"Voice preset {args.voice_preset!r} is missing ref_text")
+            args.ref_text = ref_text
+
     if args.ref_audio is None:
-        ref_audio = preset.get("ref_audio")
-        if not ref_audio:
-            raise ValueError(f"Voice preset {args.voice_preset!r} is missing ref_audio")
-        ref_audio_path = Path(ref_audio)
-        if not ref_audio_path.is_absolute():
-            ref_audio_path = presets_path.parent / ref_audio_path
-        args.ref_audio = str(ref_audio_path.resolve())
-
+        raise ValueError("Reference audio is required. Pass --ref-audio or --voice-preset.")
     if args.ref_text is None:
-        ref_text = preset.get("ref_text")
-        if not ref_text:
-            raise ValueError(f"Voice preset {args.voice_preset!r} is missing ref_text")
-        args.ref_text = ref_text
+        args.ref_text = DEFAULT_REF_TEXT
 
 
 def synthesize_text(model, text: str, args) -> tuple[np.ndarray, int]:
@@ -513,7 +519,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dtype", default="bf16", choices=["bf16", "fp16", "fp32"])
     parser.add_argument("--language", default="Chinese", help="TTS and aligner language hint")
     parser.add_argument("--voice-presets", default=str(DEFAULT_VOICE_PRESETS), help="JSON file containing voice presets")
-    parser.add_argument("--voice-preset", default="default", help="Voice preset name from --voice-presets")
+    parser.add_argument("--voice-preset", default="", help="Voice preset name from --voice-presets")
     parser.add_argument("--ref-audio", default=None, help="Manual reference audio override")
     parser.add_argument("--ref-text", default=None, help="Manual reference transcript override")
     parser.add_argument("--max-seq-len", type=int, default=8192)
